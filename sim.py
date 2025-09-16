@@ -7,6 +7,8 @@ import random
 import time
 import json 
 
+import central_nav
+
 MAP_SIZE = 50
 ROBOT_DIAMETER = 3
 CORRIDOR_WIDTH_CELLS = 3
@@ -435,6 +437,8 @@ def run_simulation(num_robots, save_video=False):
     current_paths = {i: np.array([]) for i in range(num_robots)}
     last_frame = 0
 
+    nav = central_nav.CentralNav()
+
     def simulation_step(frame):
         nonlocal last_frame
         last_frame = frame
@@ -466,12 +470,14 @@ def run_simulation(num_robots, save_video=False):
                 current_paths[i] = path
                 controller.reset()
                 metrics_manager.start_tracking(i, path, frame)
+                nav.set_path(i, path)
             
             elif frame > 0 and frame % 50 == 0 and np.linalg.norm([current_vel['lin'], current_vel['ang']]) < 0.1 and path_to_follow.size > 0:
                  path = planner.plan_path(current_pose, current_goal, world.world_map, robot.diameter, other_robots, is_replan=True)
                  current_paths[i] = path
                  controller.reset()
                  metrics_manager.record_replan(i)
+                 nav.set_path(i, path)
             
             scan_data = lidar.scan(current_pose, world.world_map, other_robots)
             linear_v, angular_v = controller.compute_velocities(current_pose, current_vel, path_to_follow, scan_data)
@@ -494,6 +500,8 @@ def run_simulation(num_robots, save_video=False):
             world.draw(ax)
             
             simulation_step(frame)
+            
+            nav.draw_intersections(ax)
 
             for i in range(num_robots):
                 robots[i].draw(ax, color=robot_colors[i])
@@ -503,6 +511,7 @@ def run_simulation(num_robots, save_video=False):
                 current_goal = goal_manager.get_current_goal(i)
                 if current_goal is not None:
                     ax.plot(current_goal['x'], current_goal['y'], '*', color=robot_colors[i], markersize=15, markeredgecolor='black')
+            
             
             ax.set_title(f"Multi-Robot Simulation ({num_robots} robots) - Frame {frame}")
             ax.set_xlim(0, MAP_SIZE); ax.set_ylim(0, MAP_SIZE)
