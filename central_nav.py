@@ -68,12 +68,12 @@ class Intersection:
 class CentralNav:
     def __init__(
             self,
-            min_path_dist: float = 0.1,
+            min_path_dist: float = 3,
             ix_radius: float = 3.5,
             min_ix_dist: float | None = None,
             min_ix_samples: int = 2,
             skew_angle: float = np.pi / 6, # to eliminate vertical lines which can break Bentley-Ottmann
-            max_trans: float = 0.3, # to eliminate collinear lines
+            max_trans: float = 0.4, # to eliminate collinear lines
             min_seg_length: float | None = 1,
     ):
         self.min_path_dist = min_path_dist
@@ -96,6 +96,8 @@ class CentralNav:
         self.ix_points: dict[str, tuple[float, float]] = dict()
         self.ix_objects: dict[str, Intersection] = dict()
 
+        self.last_cmd: dict[str, bool] = dict() # this is pretty much for logging only
+
     def rotate(self, x: float, y: float) -> tuple[float, float]:
         return tuple((np.array([x, y])).tolist())
 
@@ -113,10 +115,11 @@ class CentralNav:
 
             path = np.array(filtered_path)
         
-        trans = (np.random.rand(2) * 2 - 1) * self.max_trans
-        path += trans
+        if len(path) > 0:
+            trans = (np.random.rand(2) * 2 - 1) * self.max_trans
+            path += trans
 
-        path = path @ self.rotate_mat # apply rotation
+            path = path @ self.rotate_mat # apply rotation
         
         path = path.tolist()
         points = [
@@ -158,8 +161,6 @@ class CentralNav:
 
         intersections = self.cluster_intersections(intersections) # filter intersections
         self.replace_intersections(intersections)
-        
-        # self.publish_intersections()
     
     def cluster_intersections(self, intersections: list[tuple[float, float]]) -> list[tuple[float, float]]: # DBSCAN clustering
         if len(intersections) < 2: return intersections # no intersections to cluster
@@ -224,3 +225,30 @@ class CentralNav:
         # print('Number of intersections:', len(self.ix_objects))
         for ix in self.ix_objects.values():
             ix.draw(ax)
+
+    def set_pose(self, robot: int, x: float, y: float) -> bool: # return whether the robot can move
+        if robot not in self.last_cmd:
+            self.last_cmd[robot] = True # moving by default
+        
+        position = (x, y) # robot position
+
+        # check through all intersections
+        stop_ixes: list[str] = []
+        for ix_id, ix in self.ix_objects.items():
+            if ix.distance_sq(position) < ix.radius_sq: # entering
+                # self.get_logger().info(f'robot {robot_name} is in intersection {ix_id}')
+                if not ix.can_enter(robot):
+                    stop_ixes.append(ix_id)
+                else:
+                    ix.enter(robot)
+            else: # leaving
+                ix.leave(robot)
+        
+        move = len(stop_ixes) == 0
+        if self.last_cmd[robot] != move:
+            print(f'commanding robot {robot} to ' + ('move' if move else f'STOP (against intersection(s) {stop_ixes})')) # avoid polluting logs
+            # if self.telemetry:
+            #     self.telemetry_pub.publish(String(data=f'{self.get_clock().now().nanoseconds}:central_nav:{robot_name},{move}')) # telemetry format: (nanosec):central_nav:(robot name),(True if commanded to move, else False)
+
+        self.last_cmd[robot] = move
+        return move

@@ -480,7 +480,9 @@ def run_simulation(num_robots, save_video=False):
                  nav.set_path(i, path)
             
             scan_data = lidar.scan(current_pose, world.world_map, other_robots)
-            linear_v, angular_v = controller.compute_velocities(current_pose, current_vel, path_to_follow, scan_data)
+            linear_v, angular_v = 0, 0
+            if nav.set_pose(i, float(current_pose['x']), float(current_pose['y'])):
+                linear_v, angular_v = controller.compute_velocities(current_pose, current_vel, path_to_follow, scan_data)
             dist_moved = robot.move(linear_v, angular_v, dt=DWA_DT)
             
             if current_goal is not None and abs(linear_v) < 0.01 and abs(angular_v) < 0.01:
